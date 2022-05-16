@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -133,12 +134,11 @@ func Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 			}
 		}
 	case "RoleBinding":
-		if inputFields.StripDefaultRBAC && (
-			u.GetName() == "admin" ||
+		if inputFields.StripDefaultRBAC && (u.GetName() == "admin" ||
 			u.GetName() == "system:deployers" ||
 			u.GetName() == "system:image-builders" ||
-			u.GetName() == "system:image-pullers" ){
-				whiteOut = true
+			u.GetName() == "system:image-pullers") {
+			whiteOut = true
 		}
 	case "ConfigMap":
 		if inputFields.StripDefaultCABundle && u.GetName() == "openshift-service-ca.crt" {
@@ -149,6 +149,17 @@ func Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 			logger.Info("found copied ClusterServiceVersion, adding to whiteout")
 			whiteOut = true
 		}
+	case "VirtualMachine":
+		vmName := u.GetName()
+		vmPatchString := fmt.Sprintf(`[
+			{"op": "remove", "path": "/spec/dataVolumeTemplates"},
+			{"op": "replace", "path": "/spec/template/spec/volumes/0", "value": { "persistentVolumeClaim": { "claimName": "%v" }, "name": "%v" }}
+		]`, vmName, vmName)
+		vmPatch, err := jsonpatch.DecodePatch([]byte(vmPatchString))
+		if err != nil {
+			logger.Errorf("Failed to format json patch")
+		}
+		patch = append(patch, vmPatch...)
 	}
 	if err != nil {
 		return transform.PluginResponse{}, err
